@@ -5,19 +5,19 @@ services:
     image: postgres:17.6-alpine
     restart: always
     environment:
-      POSTGRES_USER: 'user'
-      POSTGRES_PASSWORD: 'password'
-      POSTGRES_DB: 'postgres'
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: ${POSTGRES_PGDATA}
     ports:
-      - '5432:5432'
+      - '${POSTGRES_PORT}:5432'
     networks:
       - platform
     volumes:
       - ./postgresql/data:/var/lib/postgresql
       - ./init-scripts/sql:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,11 +26,11 @@ services:
   rabbitmq:
     image: rabbitmq:3.13.7-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: 'user'
-      RABBITMQ_DEFAULT_PASS: 'password'
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"      # AMQP
-      - "15672:15672"    # Management UI
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_MGMT_PORT}:15672"
     networks:
       - platform
       - connect4
@@ -43,23 +43,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s  # RabbitMQ needs time to fully initialize
+      start_period: 30s
 
   idp_mysql:
     image: mysql:9.0.1
     volumes:
       - ./idp_mysql_data:/var/lib/mysql
     environment:
-      MYSQL_ROOT_PASSWORD: 'root'
-      MYSQL_DATABASE: 'keycloak'
-      MYSQL_USER: 'keycloak'
-      MYSQL_PASSWORD: 'password'
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - '3307:3306'
+      - '${MYSQL_PORT}:3306'
     networks:
       - kc
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,16 +68,16 @@ services:
   idp_keycloak:
     image: quay.io/keycloak/keycloak:26.3
     environment:
-      KEYCLOAK_ADMIN: 'admin'
-      KEYCLOAK_ADMIN_PASSWORD: 'admin'
-      KC_DB: 'mysql'
-      KC_DB_URL_HOST: 'idp_mysql'
-      KC_DB_URL_DATABASE: 'keycloak'
-      KC_DB_USERNAME: 'keycloak'
-      KC_DB_PASSWORD: 'password'
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: ${KC_DB}
+      KC_DB_URL_HOST: ${KC_DB_URL_HOST}
+      KC_DB_URL_DATABASE: ${MYSQL_DATABASE}
+      KC_DB_USERNAME: ${MYSQL_USER}
+      KC_DB_PASSWORD: ${MYSQL_PASSWORD}
     command: start-dev
     ports:
-      - "8180:8080"
+      - "${KEYCLOAK_PORT}:8080"
     depends_on:
       idp_mysql:
         condition: service_started
@@ -103,21 +103,21 @@ services:
     depends_on:
       - platform_backend
     ports:
-      - "5173:5173"
+      - "${PLATFORM_FRONTEND_PORT}:5173"
     networks:
       - platform
 
   connect4_backend:
     image: radu0matei1enciu/connect4-backend:main
     environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONPATH=/app:/mcts
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=user
-      - RABBITMQ_PASSWORD=password
+      PYTHON_UNBUFFERED: 1
+      PYTHONPATH: /app:/mcts
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     ports:
-      - "8000:8000"  # Expose for frontend browser access
+      - "${CONNECT4_BACKEND_PORT}:8000"
     depends_on:
       rabbitmq:
         condition: service_started
@@ -138,19 +138,19 @@ services:
       connect4_backend:
         condition: service_started
     ports:
-      - "5174:5173"
+      - "${CONNECT4_FRONTEND_PORT}:5173"
     networks:
       - connect4
 
   ai_connect4_player:
     image: radu0matei1enciu/ai-connect4-player:main
     environment:
-      - PYTHONUNBUFFERED=1
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=user
-      - RABBITMQ_PASSWORD=password
-      - CONNECT4_BACKEND_URL=http://connect4_backend:8000
+      PYTHONUNBUFFERED: 1
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CONNECT4_BACKEND_URL: http://connect4_backend:8000
     depends_on:
       rabbitmq:
         condition: service_started
