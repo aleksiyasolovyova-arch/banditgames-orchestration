@@ -1,0 +1,134 @@
+name: bandit-games
+
+services:
+  platform_postgres:
+    image: postgres:17.6-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: 'user'
+      POSTGRES_PASSWORD: 'password'
+      POSTGRES_DB: 'postgres'
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '5432:5432'
+    networks:
+      - platform
+    volumes:
+      - ./postgresql/data:/var/lib/postgresql
+      - ./init-scripts/sql:/docker-entrypoint-initdb.d
+
+  rabbitmq:
+    image: rabbitmq:3.13.7-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: 'user'
+      RABBITMQ_DEFAULT_PASS: 'password'
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management UI
+    networks:
+      - platform
+      - connect4
+      - ai-connect4-player
+    volumes:
+      - ./rabbitmq/data/:/var/lib/rabbitmq/
+      - ./rabbitmq/log/:/var/log/rabbitmq/
+
+  idp_mysql:
+    image: mysql:9.0.1
+    volumes:
+      - ./idp_mysql_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 'root'
+      MYSQL_DATABASE: 'keycloak'
+      MYSQL_USER: 'keycloak'
+      MYSQL_PASSWORD: 'password'
+    ports:
+      - '3307:3306'
+    networks:
+      - kc
+
+  idp_keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    environment:
+      KEYCLOAK_ADMIN: 'admin'
+      KEYCLOAK_ADMIN_PASSWORD: 'admin'
+      KC_DB: 'mysql'
+      KC_DB_URL_HOST: 'idp_mysql'
+      KC_DB_URL_DATABASE: 'keycloak'
+      KC_DB_USERNAME: 'keycloak'
+      KC_DB_PASSWORD: 'password'
+    command: start-dev
+    ports:
+      - "8180:8080"
+    depends_on:
+      - idp_mysql
+    networks:
+      - kc
+
+  platform_backend:
+    image: radu0matei1enciu/platform-backend:main
+    depends_on:
+      - platform_postgres
+      - rabbitmq
+    networks:
+      - platform
+      - kc
+      - connect4   # needs to read events from connect4 back-end via rabbitmq exchange
+      - ai-connect4-player
+
+  platform_frontend:
+    image: radu0matei1enciu/platform-frontend:main
+    depends_on:
+      - platform_backend
+    ports:
+      - "5173:5173"
+    networks:
+      - platform
+
+  connect4_backend:
+    image: radu0matei1enciu/connect4-backend:main
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app:/mcts
+    networks:
+      - connect4
+      - ai-connect4-player   # to reach RabbitMQ for publishing events
+
+  connect4_frontend:
+    image: radu0matei1enciu/connect4-frontend:main
+    depends_on:
+      - connect4_backend
+    ports:
+      - "5174:5173"
+    networks:
+      - connect4
+
+
+  ai_connect4_player:
+    image: radu0matei1enciu/ai-connect4-player:main
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - connect4_backend
+      - rabbitmq
+    networks:
+      - ai-connect4-player
+      - connect4     # needed to POST to connect4 backend for moves
+
+
+networks:
+  platform:
+    name: platform
+    driver: bridge
+
+  connect4:
+    name: connect4
+    driver: bridge
+
+  kc:
+    name: kc
+    driver: bridge
+
+  ai-connect4-player:
+    name: ai-connect4-player
+    driver: bridge
