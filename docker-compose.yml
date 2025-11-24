@@ -16,6 +16,12 @@ services:
     volumes:
       - ./postgresql/data:/var/lib/postgresql
       - ./init-scripts/sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   rabbitmq:
     image: rabbitmq:3.13.7-management-alpine
@@ -32,6 +38,12 @@ services:
     volumes:
       - ./rabbitmq/data/:/var/lib/rabbitmq/
       - ./rabbitmq/log/:/var/log/rabbitmq/
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s  # RabbitMQ needs time to fully initialize
 
   idp_mysql:
     image: mysql:9.0.1
@@ -46,6 +58,12 @@ services:
       - '3307:3306'
     networks:
       - kc
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   idp_keycloak:
     image: quay.io/keycloak/keycloak:26.3
@@ -61,20 +79,24 @@ services:
     ports:
       - "8180:8080"
     depends_on:
-      - idp_mysql
+      idp_mysql:
+        condition: service_started
     networks:
       - kc
 
   platform_backend:
     image: radu0matei1enciu/platform-backend:main
     depends_on:
-      - platform_postgres
-      - rabbitmq
+      platform_postgres:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     networks:
       - platform
       - kc
       - connect4
       - ai-connect4-player
+    restart: on-failure
 
   platform_frontend:
     image: radu0matei1enciu/platform-frontend:main
@@ -88,16 +110,33 @@ services:
   connect4_backend:
     image: radu0matei1enciu/connect4-backend:main
     environment:
-      PYTHONUNBUFFERED: 1
-      PYTHONPATH: "/app:/mcts"
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app:/mcts
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASSWORD=password
+    ports:
+      - "8000:8000"  # Expose for frontend browser access
+    depends_on:
+      rabbitmq:
+        condition: service_started
     networks:
       - connect4
       - ai-connect4-player
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   connect4_frontend:
     image: radu0matei1enciu/connect4-frontend:main
     depends_on:
-      - connect4_backend
+      connect4_backend:
+        condition: service_started
     ports:
       - "5174:5173"
     networks:
@@ -106,13 +145,21 @@ services:
   ai_connect4_player:
     image: radu0matei1enciu/ai-connect4-player:main
     environment:
-      PYTHONUNBUFFERED: 1
+      - PYTHONUNBUFFERED=1
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASSWORD=password
+      - CONNECT4_BACKEND_URL=http://connect4_backend:8000
     depends_on:
-      - connect4_backend
-      - rabbitmq
+      rabbitmq:
+        condition: service_started
+      connect4_backend:
+        condition: service_started
     networks:
       - ai-connect4-player
       - connect4
+    restart: on-failure
 
 networks:
   platform:

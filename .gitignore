@@ -1,0 +1,4 @@
+./idp_mysql_data/**
+./init-scripts/**
+./postgresql/**
+./rabbitmq/**
