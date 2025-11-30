@@ -1,18 +1,22 @@
 -- ============================================================================
 -- Connect4 Gameplay Logging Database Schema
--- File: schema.sql
--- ============================================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- CREATE SCHEMA
+-- ============================================================================
+
+CREATE SCHEMA IF NOT EXISTS connect4;
 
 -- ============================================================================
 -- CORE TABLES
 -- ============================================================================
 
 -- Players table (for tracking individual players/agents)
-CREATE TABLE IF NOT EXISTS players (
-                                       player_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS connect4.players (
+                                                player_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     player_type VARCHAR(20) NOT NULL CHECK (player_type IN ('human', 'cpu', 'mcts_agent')),
     skill_level VARCHAR(20) CHECK (skill_level IN ('easy', 'medium', 'hard', 'expert', NULL)),
     display_name VARCHAR(100),
@@ -21,10 +25,10 @@ CREATE TABLE IF NOT EXISTS players (
                              );
 
 -- Games table (master record for each game)
-CREATE TABLE IF NOT EXISTS games (
-                                     game_id UUID PRIMARY KEY,
-                                     player1_id UUID REFERENCES players(player_id),
-    player2_id UUID REFERENCES players(player_id),
+CREATE TABLE IF NOT EXISTS connect4.games (
+                                              game_id UUID PRIMARY KEY,
+                                              player1_id UUID REFERENCES connect4.players(player_id),
+    player2_id UUID REFERENCES connect4.players(player_id),
     player1_type VARCHAR(20) NOT NULL CHECK (player1_type IN ('human', 'cpu')),
     player2_type VARCHAR(20) NOT NULL CHECK (player2_type IN ('human', 'cpu')),
     player1_skill_level VARCHAR(20),
@@ -59,9 +63,9 @@ CREATE TABLE IF NOT EXISTS games (
                            );
 
 -- Game states table (snapshot of game state at each move)
-CREATE TABLE IF NOT EXISTS game_states (
-                                           state_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    game_id UUID NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS connect4.game_states (
+                                                    state_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
     move_index INTEGER NOT NULL,
 
     -- Board state (2D array as JSON)
@@ -84,14 +88,14 @@ CREATE TABLE IF NOT EXISTS game_states (
     -- Timestamp
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-                                                        UNIQUE(game_id, move_index)
+                                                                 UNIQUE(game_id, move_index)
     );
 
 -- Moves table (detailed move information)
-CREATE TABLE IF NOT EXISTS moves (
-                                     move_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    game_id UUID NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    state_id UUID REFERENCES game_states(state_id),
+CREATE TABLE IF NOT EXISTS connect4.moves (
+                                              move_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
+    state_id UUID REFERENCES connect4.game_states(state_id),
 
     -- Move details
     move_index INTEGER NOT NULL,
@@ -100,25 +104,25 @@ CREATE TABLE IF NOT EXISTS moves (
     row_placed INTEGER NOT NULL,
 
     -- Timing
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                                                        thinking_time_ms INTEGER,
+    move_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                                                                 thinking_time_ms INTEGER,
 
-                                                        -- Pre-move state reference
-                                                        board_before JSONB,
-                                                        board_after JSONB,
+                                                                 -- Pre-move state reference
+                                                                 board_before JSONB,
+                                                                 board_after JSONB,
 
-                                                        -- Heuristic evaluation
-                                                        utility_before JSONB,
-                                                        utility_after JSONB,
+                                                                 -- Heuristic evaluation
+                                                                 utility_before JSONB,
+                                                                 utility_after JSONB,
 
-                                                        UNIQUE(game_id, move_index)
+                                                                 UNIQUE(game_id, move_index)
     );
 
 -- MCTS statistics table (for AI move analysis)
-CREATE TABLE IF NOT EXISTS mcts_statistics (
-                                               stat_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    move_id UUID REFERENCES moves(move_id) ON DELETE CASCADE,
-    game_id UUID NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS connect4.mcts_statistics (
+                                                        stat_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    move_id UUID REFERENCES connect4.moves(move_id) ON DELETE CASCADE,
+    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
     move_index INTEGER NOT NULL,
 
     -- MCTS search statistics
@@ -145,13 +149,13 @@ CREATE TABLE IF NOT EXISTS mcts_statistics (
     metadata JSONB DEFAULT '{}'::jsonb,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                                               );
+                                                        );
 
 -- Player performance metrics (for DDA tracking)
-CREATE TABLE IF NOT EXISTS player_performance (
-                                                  performance_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    player_id UUID REFERENCES players(player_id),
-    game_id UUID REFERENCES games(game_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS connect4.player_performance (
+                                                           performance_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    player_id UUID REFERENCES connect4.players(player_id),
+    game_id UUID REFERENCES connect4.games(game_id) ON DELETE CASCADE,
 
     -- Session tracking
     session_id UUID,
@@ -176,11 +180,11 @@ CREATE TABLE IF NOT EXISTS player_performance (
     difficulty_adjustments INTEGER DEFAULT 0,
 
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                                               );
+                                                        );
 
 -- Self-play sessions (for dataset generation)
-CREATE TABLE IF NOT EXISTS self_play_sessions (
-                                                  session_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS connect4.self_play_sessions (
+                                                           session_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Session configuration
     agent1_skill VARCHAR(20) NOT NULL,
@@ -207,8 +211,8 @@ CREATE TABLE IF NOT EXISTS self_play_sessions (
     );
 
 -- Dataset exports tracking
-CREATE TABLE IF NOT EXISTS dataset_exports (
-                                               export_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS connect4.dataset_exports (
+                                                        export_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Export details
     version VARCHAR(50) NOT NULL,
@@ -241,32 +245,32 @@ CREATE TABLE IF NOT EXISTS dataset_exports (
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
-CREATE INDEX IF NOT EXISTS idx_games_created_at ON games(created_at);
-CREATE INDEX IF NOT EXISTS idx_games_player1 ON games(player1_id);
-CREATE INDEX IF NOT EXISTS idx_games_player2 ON games(player2_id);
-CREATE INDEX IF NOT EXISTS idx_games_winner ON games(winner);
+CREATE INDEX IF NOT EXISTS idx_games_status ON connect4.games(status);
+CREATE INDEX IF NOT EXISTS idx_games_created_at ON connect4.games(created_at);
+CREATE INDEX IF NOT EXISTS idx_games_player1 ON connect4.games(player1_id);
+CREATE INDEX IF NOT EXISTS idx_games_player2 ON connect4.games(player2_id);
+CREATE INDEX IF NOT EXISTS idx_games_winner ON connect4.games(winner);
 
-CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON game_states(game_id);
-CREATE INDEX IF NOT EXISTS idx_game_states_move_index ON game_states(game_id, move_index);
-CREATE INDEX IF NOT EXISTS idx_game_states_hash ON game_states(state_hash);
+CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON connect4.game_states(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_states_move_index ON connect4.game_states(game_id, move_index);
+CREATE INDEX IF NOT EXISTS idx_game_states_hash ON connect4.game_states(state_hash);
 
-CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id);
-CREATE INDEX IF NOT EXISTS idx_moves_player ON moves(player);
-CREATE INDEX IF NOT EXISTS idx_moves_timestamp ON moves(timestamp);
+CREATE INDEX IF NOT EXISTS idx_moves_game_id ON connect4.moves(game_id);
+CREATE INDEX IF NOT EXISTS idx_moves_player ON connect4.moves(player);
+CREATE INDEX IF NOT EXISTS idx_moves_timestamp ON connect4.moves(move_timestamp);
 
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_game_id ON mcts_statistics(game_id);
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_move_id ON mcts_statistics(move_id);
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_skill ON mcts_statistics(skill_level);
+CREATE INDEX IF NOT EXISTS idx_mcts_stats_game_id ON connect4.mcts_statistics(game_id);
+CREATE INDEX IF NOT EXISTS idx_mcts_stats_move_id ON connect4.mcts_statistics(move_id);
+CREATE INDEX IF NOT EXISTS idx_mcts_stats_skill ON connect4.mcts_statistics(skill_level);
 
-CREATE INDEX IF NOT EXISTS idx_self_play_sessions ON self_play_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_self_play_sessions ON connect4.self_play_sessions(started_at);
 
 -- ============================================================================
 -- VIEWS FOR ANALYTICS
 -- ============================================================================
 
 -- Complete game summary view
-CREATE OR REPLACE VIEW game_summary AS
+CREATE OR REPLACE VIEW connect4.game_summary AS
 SELECT
     g.game_id,
     g.player1_type,
@@ -281,12 +285,12 @@ SELECT
     g.ended_at,
     COUNT(DISTINCT m.move_id) as move_count,
     AVG(m.thinking_time_ms) as avg_thinking_time_ms
-FROM games g
-         LEFT JOIN moves m ON g.game_id = m.game_id
+FROM connect4.games g
+         LEFT JOIN connect4.moves m ON g.game_id = m.game_id
 GROUP BY g.game_id;
 
 -- Move analysis view (for ML training)
-CREATE OR REPLACE VIEW move_analysis AS
+CREATE OR REPLACE VIEW connect4.move_analysis AS
 SELECT
     m.move_id,
     m.game_id,
@@ -305,12 +309,12 @@ SELECT
     ms.skill_level as ai_skill_level,
     g.winner,
     g.status as game_status
-FROM moves m
-         LEFT JOIN mcts_statistics ms ON m.move_id = ms.move_id
-         JOIN games g ON m.game_id = g.game_id;
+FROM connect4.moves m
+         LEFT JOIN connect4.mcts_statistics ms ON m.move_id = ms.move_id
+         JOIN connect4.games g ON m.game_id = g.game_id;
 
 -- Dataset generation view
-CREATE OR REPLACE VIEW training_data AS
+CREATE OR REPLACE VIEW connect4.training_data AS
 SELECT
     m.game_id,
     m.move_index,
@@ -331,10 +335,10 @@ END as outcome_reward,
     g.player1_skill_level,
     g.player2_skill_level,
     m.thinking_time_ms
-FROM moves m
-JOIN games g ON m.game_id = g.game_id
-LEFT JOIN game_states gs ON m.state_id = gs.state_id
-LEFT JOIN mcts_statistics ms ON m.move_id = ms.move_id
+FROM connect4.moves m
+JOIN connect4.games g ON m.game_id = g.game_id
+LEFT JOIN connect4.game_states gs ON m.state_id = gs.state_id
+LEFT JOIN connect4.mcts_statistics ms ON m.move_id = ms.move_id
 WHERE g.status IN ('win', 'draw');
 
 -- ============================================================================
@@ -342,7 +346,7 @@ WHERE g.status IN ('win', 'draw');
 -- ============================================================================
 
 -- Function to get complete game replay data
-CREATE OR REPLACE FUNCTION get_game_replay(p_game_id UUID)
+CREATE OR REPLACE FUNCTION connect4.get_game_replay(p_game_id UUID)
 RETURNS TABLE (
     move_index INTEGER,
     player VARCHAR(20),
@@ -350,7 +354,7 @@ RETURNS TABLE (
     row_placed INTEGER,
     board_after JSONB,
     thinking_time_ms INTEGER,
-    timestamp TIMESTAMP WITH TIME ZONE
+    move_timestamp TIMESTAMP WITH TIME ZONE
 ) AS $$
 BEGIN
 RETURN QUERY
@@ -361,15 +365,15 @@ SELECT
     m.row_placed,
     m.board_after,
     m.thinking_time_ms,
-    m.timestamp
-FROM moves m
+    m.move_timestamp
+FROM connect4.moves m
 WHERE m.game_id = p_game_id
 ORDER BY m.move_index;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Function to get game state at specific move
-CREATE OR REPLACE FUNCTION get_game_state_at_move(p_game_id UUID, p_move_index INTEGER)
+CREATE OR REPLACE FUNCTION connect4.get_game_state_at_move(p_game_id UUID, p_move_index INTEGER)
 RETURNS JSONB AS $$
 DECLARE
 result JSONB;
@@ -384,7 +388,7 @@ SELECT jsonb_build_object(
                'utility_player1', gs.utility_player1,
                'utility_player2', gs.utility_player2
        ) INTO result
-FROM game_states gs
+FROM connect4.game_states gs
 WHERE gs.game_id = p_game_id AND gs.move_index = p_move_index;
 
 RETURN result;
