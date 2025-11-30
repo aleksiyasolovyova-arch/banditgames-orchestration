@@ -3,3 +3,4 @@
 ./postgresql/**
 ./rabbitmq/**
 .env
+.idea/**
