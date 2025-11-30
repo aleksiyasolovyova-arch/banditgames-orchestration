@@ -1,0 +1,5 @@
+services:
+  connect4_backend:
+    image: ${CONNECT4_BACKEND_IMAGE}
+    build:
+      context: ${CONNECT4_BACKEND_PATH}

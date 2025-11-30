@@ -2,7 +2,7 @@ name: bandit-games
 
 services:
   platform_postgres:
-    image: postgres:17.6-alpine
+    image: postgres:17.0-alpine
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -13,6 +13,8 @@ services:
       - '${POSTGRES_PORT}:5432'
     networks:
       - platform
+      - connect4
+      - ai-connect4-player
     volumes:
       - ./postgresql/data:/var/lib/postgresql
       - ./init-scripts/sql:/docker-entrypoint-initdb.d
@@ -85,12 +87,12 @@ services:
       - kc
 
   platform_backend:
-    image: radu0matei1enciu/platform-backend:main
+    image: ${PLATFORM_BACKEND_IMAGE}
     depends_on:
       platform_postgres:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     networks:
       - platform
       - kc
@@ -99,7 +101,7 @@ services:
     restart: on-failure
 
   platform_frontend:
-    image: radu0matei1enciu/platform-frontend:main
+    image: ${PLATFORM_FRONTEND_IMAGE}
     depends_on:
       - platform_backend
     ports:
@@ -108,19 +110,28 @@ services:
       - platform
 
   connect4_backend:
-    image: radu0matei1enciu/connect4-backend:main
+    image: ${CONNECT4_BACKEND_IMAGE}
     environment:
-      PYTHON_UNBUFFERED: 1
-      PYTHONPATH: /app:/mcts
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app
+      # RabbitMQ
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # PostgreSQL
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "${CONNECT4_BACKEND_PORT}:8000"
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
+      platform_postgres:
+        condition: service_healthy
     networks:
       - connect4
       - ai-connect4-player
@@ -133,7 +144,7 @@ services:
       start_period: 10s
 
   connect4_frontend:
-    image: radu0matei1enciu/connect4-frontend:main
+    image: ${CONNECT4_FRONTEND_IMAGE}
     depends_on:
       connect4_backend:
         condition: service_started
@@ -143,19 +154,29 @@ services:
       - connect4
 
   ai_connect4_player:
-    image: radu0matei1enciu/ai-connect4-player:main
+    image: ${AI_CONNECT4_PLAYER_IMAGE}
     environment:
       PYTHONUNBUFFERED: 1
+      # RabbitMQ
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Backend API
       CONNECT4_BACKEND_URL: http://connect4_backend:8000
+      # PostgreSQL (for dataset export)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       connect4_backend:
-        condition: service_started
+        condition: service_healthy
+      platform_postgres:
+        condition: service_healthy
     networks:
       - ai-connect4-player
       - connect4

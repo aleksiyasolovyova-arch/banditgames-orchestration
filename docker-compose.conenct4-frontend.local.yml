@@ -1,0 +1,5 @@
+services:
+  connect4_frontend:
+    image: ${CONNECT4_FRONTEND_IMAGE}
+    build:
+      context: ${CONNECT4_FRONTEND_PATH}

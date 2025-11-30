@@ -1,5 +1,10 @@
-./idp_mysql_data/**
-./init-scripts/**
-./postgresql/**
-./rabbitmq/**
+# IDE 
+.idea/**
+
+# Database and data directories
+idp_mysql_data/
+postgresql/
+rabbitmq/
+
+# Environment files with secrets
 .env

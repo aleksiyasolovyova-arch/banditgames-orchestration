@@ -1,0 +1,5 @@
+services:
+  ai_connect4_player:
+    image: ${AI_CONNECT4_PLAYER_IMAGE}
+    build:
+      context: ${AI_CONNECT4_PLAYER_PATH}
