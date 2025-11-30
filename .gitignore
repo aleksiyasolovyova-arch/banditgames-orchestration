@@ -1,5 +1,7 @@
-./idp_mysql_data/**
-./init-scripts/**
-./postgresql/**
-./rabbitmq/**
+# Database data directories
+idp_mysql_data/
+postgresql/
+rabbitmq/
+
+# Environment files with secrets
 .env
