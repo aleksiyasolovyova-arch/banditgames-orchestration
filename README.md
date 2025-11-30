@@ -17,6 +17,9 @@ Fill in the credentials.
 Make sure the `.env` stays local (DO NOT COMMIT) 
 
 ```bash
-docker compose up -d 
+docker compose up 
 
 ```
+
+# Test local/remote images
+

@@ -1,0 +1,5 @@
+services:
+  platform_frontend:
+    image: ${PLATFORM_FRONTEND_IMAGE}
+    build:
+      context: ${PLATFORM_FRONTEND_PATH}

@@ -1,0 +1,6 @@
+services:
+  platform_backend:
+    image: ${PLATFORM_BACKEND_IMAGE}
+    build:
+      context: ${PLATFORM_BACKEND_PATH}
+
