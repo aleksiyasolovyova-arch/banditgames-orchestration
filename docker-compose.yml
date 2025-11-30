@@ -1,80 +1,8 @@
 name: bandit-games
 
-x-platform-backend-base: &platform-backend-base
-  depends_on:
-    platform_postgres:
-      condition: service_started
-    rabbitmq:
-      condition: service_started
-  networks:
-    - platform
-    - kc
-    - connect4
-    - ai-connect4-player
-  restart: on-failure
-
-x-platform-frontend-base: &platform-frontend-base
-  depends_on:
-    - platform_backend
-  ports:
-    - "${PLATFORM_FRONTEND_PORT}:5173"
-  networks:
-    - platform
-
-x-connect4-backend-base: &connect4-backend-base
-  environment:
-    PYTHON_UNBUFFERED: 1
-    PYTHONPATH: /app:/mcts
-    RABBITMQ_HOST: ${RABBITMQ_HOST}
-    RABBITMQ_PORT: ${RABBITMQ_PORT}
-    RABBITMQ_USER: ${RABBITMQ_USER}
-    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-  ports:
-    - "${CONNECT4_BACKEND_PORT}:8000"
-  depends_on:
-    rabbitmq:
-      condition: service_started
-  networks:
-    - connect4
-    - ai-connect4-player
-  restart: on-failure
-  healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    interval: 10s
-    timeout: 5s
-    retries: 3
-    start_period: 10s
-
-x-connect4-frontend-base: &connect4-frontend-base
-  depends_on:
-    connect4_backend:
-      condition: service_started
-  ports:
-    - "${CONNECT4_FRONTEND_PORT}:5173"
-  networks:
-    - connect4
-
-x-ai-connect4-player-base: &ai-connect4-player-base
-  environment:
-    PYTHONUNBUFFERED: 1
-    RABBITMQ_HOST: ${RABBITMQ_HOST}
-    RABBITMQ_PORT: ${RABBITMQ_PORT}
-    RABBITMQ_USER: ${RABBITMQ_USER}
-    RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-    CONNECT4_BACKEND_URL: http://connect4_backend:8000
-  depends_on:
-    rabbitmq:
-      condition: service_started
-    connect4_backend:
-      condition: service_started
-  networks:
-    - ai-connect4-player
-    - connect4
-  restart: on-failure
-
 services:
   platform_postgres:
-    image: postgres:17.6-alpine
+    image: postgres:17.0-alpine
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -85,6 +13,8 @@ services:
       - '${POSTGRES_PORT}:5432'
     networks:
       - platform
+      - connect4
+      - ai-connect4-player
     volumes:
       - ./postgresql/data:/var/lib/postgresql
       - ./init-scripts/sql:/docker-entrypoint-initdb.d
@@ -157,24 +87,100 @@ services:
       - kc
 
   platform_backend:
-    <<: *platform-backend-base
     image: ${PLATFORM_BACKEND_IMAGE}
+    depends_on:
+      platform_postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - platform
+      - kc
+      - connect4
+      - ai-connect4-player
+    restart: on-failure
 
   platform_frontend:
-    <<: *platform-frontend-base
     image: ${PLATFORM_FRONTEND_IMAGE}
+    depends_on:
+      - platform_backend
+    ports:
+      - "${PLATFORM_FRONTEND_PORT}:5173"
+    networks:
+      - platform
 
   connect4_backend:
-    <<: *connect4-backend-base
     image: ${CONNECT4_BACKEND_IMAGE}
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app
+      # RabbitMQ
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # PostgreSQL
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${CONNECT4_BACKEND_PORT}:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      platform_postgres:
+        condition: service_healthy
+    networks:
+      - connect4
+      - ai-connect4-player
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   connect4_frontend:
-    <<: *connect4-frontend-base
     image: ${CONNECT4_FRONTEND_IMAGE}
+    depends_on:
+      connect4_backend:
+        condition: service_started
+    ports:
+      - "${CONNECT4_FRONTEND_PORT}:5173"
+    networks:
+      - connect4
 
   ai_connect4_player:
-    <<: *ai-connect4-player-base
     image: ${AI_CONNECT4_PLAYER_IMAGE}
+    environment:
+      PYTHONUNBUFFERED: 1
+      # RabbitMQ
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Backend API
+      CONNECT4_BACKEND_URL: http://connect4_backend:8000
+      # PostgreSQL (for dataset export)
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      connect4_backend:
+        condition: service_healthy
+      platform_postgres:
+        condition: service_healthy
+    networks:
+      - ai-connect4-player
+      - connect4
+    restart: on-failure
 
 networks:
   platform:
@@ -192,4 +198,3 @@ networks:
   ai-connect4-player:
     name: ai-connect4-player
     driver: bridge
-
