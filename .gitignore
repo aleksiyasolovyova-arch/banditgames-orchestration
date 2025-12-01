@@ -1,5 +1,5 @@
 # IDE 
-.idea/**
+.idea/
 
 # Database and data directories
 idp_mysql_data/

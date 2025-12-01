@@ -115,7 +115,7 @@ services:
     depends_on:
       - platform_backend
     ports:
-      - "${PLATFORM_FRONTEND_PORT}:5173"
+      - "${PLATFORM_FRONTEND_PORT}:80"
     networks:
       - platform
 
@@ -159,7 +159,7 @@ services:
       connect4_backend:
         condition: service_started
     ports:
-      - "${CONNECT4_FRONTEND_PORT}:5173"
+      - "${CONNECT4_FRONTEND_PORT}:80"
     networks:
       - connect4
 
