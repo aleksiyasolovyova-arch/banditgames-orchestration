@@ -9,9 +9,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================================
 
 CREATE SCHEMA IF NOT EXISTS connect4;
-CREATE SCHEMA IF NOT EXISTS game_schema;
-CREATE SCHEMA IF NOT EXISTS gamelobby_schema;
+CREATE SCHEMA IF NOT EXISTS content_schema;
 CREATE SCHEMA IF NOT EXISTS player_schema;
+
 -- For now I will leave these last 3 here ( should not be here ) THIS IS FOR RADU ALSO
 -- ============================================================================
 -- CORE TABLES

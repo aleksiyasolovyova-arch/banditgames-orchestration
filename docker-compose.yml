@@ -88,6 +88,8 @@ services:
 
   platform_backend:
     image: ${PLATFORM_BACKEND_IMAGE}
+    ports:
+      - "${PLATFORM_BACKEND_PORT}:8080"
     depends_on:
       platform_postgres:
         condition: service_healthy
@@ -110,6 +112,7 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: /
+
   platform_frontend:
     image: ${PLATFORM_FRONTEND_IMAGE}
     depends_on:
