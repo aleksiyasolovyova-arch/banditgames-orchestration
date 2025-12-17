@@ -1,399 +1,140 @@
--- ============================================================================
--- Connect4 Gameplay Logging Database Schema
+-- Connect4 Database Schema
+-- PostgreSQL Schema for persistent game storage
+-- Database: postgres (shared with other services)
+-- Schema: connect4_backend (isolated namespace)
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ============================================================================
--- CREATE SCHEMAS
--- ============================================================================
+-- Create dedicated schema for Connect4 backend
+DROP SCHEMA IF EXISTS connect4_backend CASCADE;
+CREATE SCHEMA connect4_backend;
 
-CREATE SCHEMA IF NOT EXISTS connect4;
-CREATE SCHEMA IF NOT EXISTS content_schema;
-CREATE SCHEMA IF NOT EXISTS player_schema;
+-- Set search path to use the new schema
+SET search_path TO connect4_backend, public;
 
--- For now I will leave these last 3 here ( should not be here ) THIS IS FOR RADU ALSO
--- ============================================================================
--- CORE TABLES
--- ============================================================================
+-- Drop tables if they exist (for clean redeployment)
+DROP TABLE IF EXISTS connect4_backend.moves CASCADE;
+DROP TABLE IF EXISTS connect4_backend.games CASCADE;
 
--- Players table (for tracking individual players/agents)
-CREATE TABLE IF NOT EXISTS connect4.players (
-                                                player_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    player_type VARCHAR(20) NOT NULL CHECK (player_type IN ('human', 'cpu', 'mcts_agent')),
-    skill_level VARCHAR(20) CHECK (skill_level IN ('easy', 'medium', 'hard', 'expert', NULL)),
-    display_name VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                             metadata JSONB DEFAULT '{}'::jsonb
-                             );
+-- Games table - stores game state and metadata
+CREATE TABLE connect4_backend.games (
+                                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
--- Games table (master record for each game)
-CREATE TABLE IF NOT EXISTS connect4.games (
-                                              game_id UUID PRIMARY KEY,
-                                              player1_id UUID REFERENCES connect4.players(player_id),
-    player2_id UUID REFERENCES connect4.players(player_id),
-    player1_type VARCHAR(20) NOT NULL CHECK (player1_type IN ('human', 'cpu')),
-    player2_type VARCHAR(20) NOT NULL CHECK (player2_type IN ('human', 'cpu')),
-    player1_skill_level VARCHAR(20),
-    player2_skill_level VARCHAR(20),
+    -- Board configuration
+                                        rows INTEGER NOT NULL DEFAULT 6 CHECK (rows >= 4 AND rows <= 10),
+    cols INTEGER NOT NULL DEFAULT 7 CHECK (cols >= 4 AND cols <= 10),
 
-    -- Game configuration
-    rows INTEGER NOT NULL DEFAULT 6,
-    cols INTEGER NOT NULL DEFAULT 7,
-    connect INTEGER NOT NULL DEFAULT 4,
-    empty_token VARCHAR(5) NOT NULL DEFAULT '.',
-    player1_token VARCHAR(5) NOT NULL DEFAULT 'X',
-    player2_token VARCHAR(5) NOT NULL DEFAULT 'O',
-    starting_player VARCHAR(20) NOT NULL DEFAULT 'player1',
+    -- Board state (stored as 2D array of strings: 'X', 'O', '.')
+    grid JSONB NOT NULL,
 
-    -- Game outcome
-    status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'win', 'draw', 'abandoned')),
-    winner VARCHAR(20) CHECK (winner IN ('player1', 'player2', NULL)),
-    total_moves INTEGER DEFAULT 0,
+    -- Players
+    player_one_id VARCHAR(255) NOT NULL,
+    player_one_name VARCHAR(255) NOT NULL,
+    player_two_id VARCHAR(255) NOT NULL,
+    player_two_name VARCHAR(255) NOT NULL,
+
+    -- Game state
+    current_token VARCHAR(1) NOT NULL CHECK (current_token IN ('X', 'O')),
+    phase VARCHAR(20) NOT NULL CHECK (phase IN ('NOT_STARTED', 'IN_PROGRESS', 'FINISHED')),
+
+    -- Winner (nullable - null means draw or game in progress)
+    winner_id VARCHAR(255),
+    winner_name VARCHAR(255),
 
     -- Timestamps
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP WITH TIME ZONE,
-    ended_at TIMESTAMP WITH TIME ZONE,
-                           duration_seconds FLOAT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    turn_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-                           -- Final state
-                           final_board JSONB,
-                           final_utilities JSONB,
+    -- Constraints
+    CONSTRAINT different_players CHECK (player_one_id != player_two_id),
+    CONSTRAINT winner_is_player CHECK (
+        winner_id IS NULL OR
+        winner_id = player_one_id OR
+        winner_id = player_two_id
+    )
+);
 
-                           -- Metadata for ML
-                           game_metadata JSONB DEFAULT '{}'::jsonb
-                           );
-
--- Game states table (snapshot of game state at each move)
-CREATE TABLE IF NOT EXISTS connect4.game_states (
-                                                    state_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
-    move_index INTEGER NOT NULL,
-
-    -- Board state (2D array as JSON)
-    board JSONB NOT NULL,
-
-    -- Turn information
-    current_player VARCHAR(20) NOT NULL,
-    legal_actions JSONB NOT NULL,
-
-    -- Game status at this state
-    status VARCHAR(20) NOT NULL,
-
-    -- Heuristic evaluation (utility values)
-    utility_player1 FLOAT DEFAULT 0,
-    utility_player2 FLOAT DEFAULT 0,
-
-    -- State hash for deduplication/lookup
-    state_hash VARCHAR(128),
-
-    -- Timestamp
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
-                                                                 UNIQUE(game_id, move_index)
-    );
-
--- Moves table (detailed move information)
-CREATE TABLE IF NOT EXISTS connect4.moves (
-                                              move_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
-    state_id UUID REFERENCES connect4.game_states(state_id),
+-- Moves table - stores move history for each game
+CREATE TABLE connect4_backend.moves (
+                                        id BIGSERIAL PRIMARY KEY,
+                                        game_id UUID NOT NULL REFERENCES connect4_backend.games(id) ON DELETE CASCADE,
 
     -- Move details
-    move_index INTEGER NOT NULL,
-    player VARCHAR(20) NOT NULL,
-    column_played INTEGER NOT NULL,
-    row_placed INTEGER NOT NULL,
+                                        move_index INTEGER NOT NULL,
+                                        column INTEGER NOT NULL,
+
+    -- Landing position
+                                        landed_row INTEGER NOT NULL,
+                                        landed_col INTEGER NOT NULL,
+
+    -- Token placed
+                                        token VARCHAR(1) NOT NULL CHECK (token IN ('X', 'O')),
+
+    -- Player who made the move
+                                        player_id VARCHAR(255) NOT NULL,
 
     -- Timing
-    move_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                                                                 thinking_time_ms INTEGER,
+                                        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                        thinking_time_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
 
-                                                                 -- Pre-move state reference
-                                                                 board_before JSONB,
-                                                                 board_after JSONB,
+    -- Constraints
+                                        CONSTRAINT unique_move_index_per_game UNIQUE (game_id, move_index),
+                                        CHECK (column >= 0),
+    CHECK (landed_row >= 0),
+    CHECK (landed_col >= 0),
+    CHECK (move_index >= 0),
+    CHECK (thinking_time_ms >= 0)
+);
 
-                                                                 -- Heuristic evaluation
-                                                                 utility_before JSONB,
-                                                                 utility_after JSONB,
+-- Indexes for query performance
 
-                                                                 UNIQUE(game_id, move_index)
-    );
+-- Index for finding games by players
+CREATE INDEX idx_games_player_one ON connect4_backend.games(player_one_id);
+CREATE INDEX idx_games_player_two ON connect4_backend.games(player_two_id);
 
--- MCTS statistics table (for AI move analysis)
-CREATE TABLE IF NOT EXISTS connect4.mcts_statistics (
-                                                        stat_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    move_id UUID REFERENCES connect4.moves(move_id) ON DELETE CASCADE,
-    game_id UUID NOT NULL REFERENCES connect4.games(game_id) ON DELETE CASCADE,
-    move_index INTEGER NOT NULL,
+-- Index for finding active/finished games
+CREATE INDEX idx_games_phase ON connect4_backend.games(phase);
+CREATE INDEX idx_games_finished_at ON connect4_backend.games(finished_at) WHERE finished_at IS NOT NULL;
 
-    -- MCTS search statistics
-    skill_level VARCHAR(20),
-    time_limit_seconds FLOAT,
-    actual_search_time_seconds FLOAT,
-    num_rollouts INTEGER,
-    nodes_explored INTEGER,
+-- Index for game timeline queries
+CREATE INDEX idx_games_created_at ON connect4_backend.games(created_at DESC);
+CREATE INDEX idx_games_updated_at ON connect4_backend.games(updated_at DESC);
 
-    -- Move selection data
-    best_move INTEGER,
-    move_probabilities JSONB,
-    visit_counts JSONB,
-    q_values JSONB,
+-- Index for move queries
+CREATE INDEX idx_moves_game_id ON connect4_backend.moves(game_id);
+CREATE INDEX idx_moves_game_move_index ON connect4_backend.moves(game_id, move_index);
+CREATE INDEX idx_moves_timestamp ON connect4_backend.moves(timestamp);
 
-    -- Exploration vs exploitation
-    exploration_constant FLOAT,
+-- Views for common queries
 
-    -- Dynamic difficulty adjustment
-    time_adjustment_factor FLOAT,
-    base_skill_level VARCHAR(20),
-
-    -- Additional metadata
-    metadata JSONB DEFAULT '{}'::jsonb,
-
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                                                        );
-
--- Player performance metrics (for DDA tracking)
-CREATE TABLE IF NOT EXISTS connect4.player_performance (
-                                                           performance_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    player_id UUID REFERENCES connect4.players(player_id),
-    game_id UUID REFERENCES connect4.games(game_id) ON DELETE CASCADE,
-
-    -- Session tracking
-    session_id UUID,
-
-    -- Performance metrics
-    games_played INTEGER DEFAULT 0,
-    games_won INTEGER DEFAULT 0,
-    games_lost INTEGER DEFAULT 0,
-    games_drawn INTEGER DEFAULT 0,
-
-    -- Recent performance (for DDA)
-    recent_win_rate FLOAT,
-    consecutive_wins INTEGER DEFAULT 0,
-    consecutive_losses INTEGER DEFAULT 0,
-
-    -- Timing metrics
-    avg_response_time_seconds FLOAT,
-    total_thinking_time_seconds FLOAT,
-
-    -- Skill progression
-    current_opponent_skill VARCHAR(20),
-    difficulty_adjustments INTEGER DEFAULT 0,
-
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                                                        );
-
--- Self-play sessions (for dataset generation)
-CREATE TABLE IF NOT EXISTS connect4.self_play_sessions (
-                                                           session_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-
-    -- Session configuration
-    agent1_skill VARCHAR(20) NOT NULL,
-    agent2_skill VARCHAR(20) NOT NULL,
-    noise_level FLOAT DEFAULT 0.0,
-    randomness_temperature FLOAT DEFAULT 0.0,
-
-    -- Session stats
-    total_games INTEGER DEFAULT 0,
-    agent1_wins INTEGER DEFAULT 0,
-    agent2_wins INTEGER DEFAULT 0,
-    draws INTEGER DEFAULT 0,
-
-    -- Timing
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP WITH TIME ZONE,
-
-                           -- Export tracking
-                           exported_to_parquet BOOLEAN DEFAULT FALSE,
-                           parquet_file_path VARCHAR(500),
-    dvc_version VARCHAR(50),
-
-    metadata JSONB DEFAULT '{}'::jsonb
-    );
-
--- Dataset exports tracking
-CREATE TABLE IF NOT EXISTS connect4.dataset_exports (
-                                                        export_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-
-    -- Export details
-    version VARCHAR(50) NOT NULL,
-    num_games INTEGER NOT NULL,
-    num_moves INTEGER NOT NULL,
-
-    -- File information
-    file_path VARCHAR(500) NOT NULL,
-    file_size_bytes BIGINT,
-    checksum VARCHAR(128),
-
-    -- DVC tracking
-    dvc_tracked BOOLEAN DEFAULT FALSE,
-    dvc_file_path VARCHAR(500),
-    minio_bucket VARCHAR(100),
-    minio_key VARCHAR(500),
-
-    -- Generation parameters
-    skill_levels_included JSONB,
-    date_range_start TIMESTAMP WITH TIME ZONE,
-    date_range_end TIMESTAMP WITH TIME ZONE,
-
-    -- Timestamps
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
-                             metadata JSONB DEFAULT '{}'::jsonb
-                             );
-
--- ============================================================================
--- INDEXES FOR PERFORMANCE
--- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_games_status ON connect4.games(status);
-CREATE INDEX IF NOT EXISTS idx_games_created_at ON connect4.games(created_at);
-CREATE INDEX IF NOT EXISTS idx_games_player1 ON connect4.games(player1_id);
-CREATE INDEX IF NOT EXISTS idx_games_player2 ON connect4.games(player2_id);
-CREATE INDEX IF NOT EXISTS idx_games_winner ON connect4.games(winner);
-
-CREATE INDEX IF NOT EXISTS idx_game_states_game_id ON connect4.game_states(game_id);
-CREATE INDEX IF NOT EXISTS idx_game_states_move_index ON connect4.game_states(game_id, move_index);
-CREATE INDEX IF NOT EXISTS idx_game_states_hash ON connect4.game_states(state_hash);
-
-CREATE INDEX IF NOT EXISTS idx_moves_game_id ON connect4.moves(game_id);
-CREATE INDEX IF NOT EXISTS idx_moves_player ON connect4.moves(player);
-CREATE INDEX IF NOT EXISTS idx_moves_timestamp ON connect4.moves(move_timestamp);
-
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_game_id ON connect4.mcts_statistics(game_id);
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_move_id ON connect4.mcts_statistics(move_id);
-CREATE INDEX IF NOT EXISTS idx_mcts_stats_skill ON connect4.mcts_statistics(skill_level);
-
-CREATE INDEX IF NOT EXISTS idx_self_play_sessions ON connect4.self_play_sessions(started_at);
-
--- ============================================================================
--- VIEWS FOR ANALYTICS
--- ============================================================================
-
--- Complete game summary view
-CREATE OR REPLACE VIEW connect4.game_summary AS
+-- Active games view
+CREATE VIEW connect4_backend.active_games AS
 SELECT
-    g.game_id,
-    g.player1_type,
-    g.player2_type,
-    g.player1_skill_level,
-    g.player2_skill_level,
-    g.status,
-    g.winner,
-    g.total_moves,
-    g.duration_seconds,
-    g.created_at,
-    g.ended_at,
-    COUNT(DISTINCT m.move_id) as move_count,
-    AVG(m.thinking_time_ms) as avg_thinking_time_ms
-FROM connect4.games g
-         LEFT JOIN connect4.moves m ON g.game_id = m.game_id
-GROUP BY g.game_id;
+    g.*,
+    COUNT(m.id) as move_count,
+    MAX(m.timestamp) as last_move_at
+FROM connect4_backend.games g
+         LEFT JOIN connect4_backend.moves m ON g.id = m.game_id
+WHERE g.phase IN ('NOT_STARTED', 'IN_PROGRESS')
+GROUP BY g.id;
 
--- Move analysis view (for ML training)
-CREATE OR REPLACE VIEW connect4.move_analysis AS
+-- Finished games view with statistics
+CREATE VIEW connect4_backend.finished_games AS
 SELECT
-    m.move_id,
-    m.game_id,
-    m.move_index,
-    m.player,
-    m.column_played,
-    m.row_placed,
-    m.board_before,
-    m.board_after,
-    m.utility_before,
-    m.utility_after,
-    ms.best_move,
-    ms.visit_counts,
-    ms.q_values,
-    ms.num_rollouts,
-    ms.skill_level as ai_skill_level,
-    g.winner,
-    g.status as game_status
-FROM connect4.moves m
-         LEFT JOIN connect4.mcts_statistics ms ON m.move_id = ms.move_id
-         JOIN connect4.games g ON m.game_id = g.game_id;
+    g.*,
+    COUNT(m.id) as total_moves,
+    EXTRACT(EPOCH FROM (g.finished_at - g.started_at)) as duration_seconds,
+    MIN(m.timestamp) as first_move_at,
+    MAX(m.timestamp) as last_move_at
+FROM connect4_backend.games g
+         LEFT JOIN connect4_backend.moves m ON g.id = m.game_id
+WHERE g.phase = 'FINISHED'
+GROUP BY g.id;
 
--- Dataset generation view
-CREATE OR REPLACE VIEW connect4.training_data AS
-SELECT
-    m.game_id,
-    m.move_index,
-    m.player,
-    m.column_played as action,
-    m.board_before as state,
-    gs.legal_actions,
-    ms.visit_counts,
-    ms.q_values,
-    ms.num_rollouts,
-    ms.best_move,
-    g.winner,
-    CASE
-        WHEN g.winner = m.player THEN 1.0
-        WHEN g.winner IS NULL THEN 0.0
-        ELSE -1.0
-END as outcome_reward,
-    g.player1_skill_level,
-    g.player2_skill_level,
-    m.thinking_time_ms
-FROM connect4.moves m
-JOIN connect4.games g ON m.game_id = g.game_id
-LEFT JOIN connect4.game_states gs ON m.state_id = gs.state_id
-LEFT JOIN connect4.mcts_statistics ms ON m.move_id = ms.move_id
-WHERE g.status IN ('win', 'draw');
 
--- ============================================================================
--- FUNCTIONS FOR REPLAY
--- ============================================================================
-
--- Function to get complete game replay data
-CREATE OR REPLACE FUNCTION connect4.get_game_replay(p_game_id UUID)
-RETURNS TABLE (
-    move_index INTEGER,
-    player VARCHAR(20),
-    column_played INTEGER,
-    row_placed INTEGER,
-    board_after JSONB,
-    thinking_time_ms INTEGER,
-    move_timestamp TIMESTAMP WITH TIME ZONE
-) AS $$
-BEGIN
-RETURN QUERY
-SELECT
-    m.move_index,
-    m.player,
-    m.column_played,
-    m.row_placed,
-    m.board_after,
-    m.thinking_time_ms,
-    m.move_timestamp
-FROM connect4.moves m
-WHERE m.game_id = p_game_id
-ORDER BY m.move_index;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to get game state at specific move
-CREATE OR REPLACE FUNCTION connect4.get_game_state_at_move(p_game_id UUID, p_move_index INTEGER)
-RETURNS JSONB AS $$
-DECLARE
-result JSONB;
-BEGIN
-SELECT jsonb_build_object(
-               'game_id', gs.game_id,
-               'move_index', gs.move_index,
-               'board', gs.board,
-               'current_player', gs.current_player,
-               'legal_actions', gs.legal_actions,
-               'status', gs.status,
-               'utility_player1', gs.utility_player1,
-               'utility_player2', gs.utility_player2
-       ) INTO result
-FROM connect4.game_states gs
-WHERE gs.game_id = p_game_id AND gs.move_index = p_move_index;
-
-RETURN result;
-END;
-$$ LANGUAGE plpgsql;
+-- Reset search path
+RESET search_path;
