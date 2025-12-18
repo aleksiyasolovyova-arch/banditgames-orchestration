@@ -13,13 +13,22 @@ CREATE SCHEMA connect4_backend;
 -- Set search path to use the new schema
 SET search_path TO connect4_backend, public;
 
--- Drop tables if they exist (for clean redeployment)
-DROP TABLE IF EXISTS connect4_backend.moves CASCADE;
-DROP TABLE IF EXISTS connect4_backend.games CASCADE;
+
+-- Players table - stores player information
+CREATE TABLE connect4_backend.players (
+                                          player_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- Player information
+                                          name VARCHAR(255) NOT NULL,
+
+    -- Timestamps
+                                          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Games table - stores game state and metadata
 CREATE TABLE connect4_backend.games (
-                                        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                        game_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
     -- Board configuration
                                         rows INTEGER NOT NULL DEFAULT 6 CHECK (rows >= 4 AND rows <= 10),
@@ -28,10 +37,10 @@ CREATE TABLE connect4_backend.games (
     -- Board state (stored as 2D array of strings: 'X', 'O', '.')
     grid JSONB NOT NULL,
 
-    -- Players
-    player_one_id VARCHAR(255) NOT NULL,
+    -- Players (foreign keys to players table)
+    player_one_id UUID NOT NULL REFERENCES connect4_backend.players(player_id) ON DELETE RESTRICT,
     player_one_name VARCHAR(255) NOT NULL,
-    player_two_id VARCHAR(255) NOT NULL,
+    player_two_id UUID NOT NULL REFERENCES connect4_backend.players(player_id) ON DELETE RESTRICT,
     player_two_name VARCHAR(255) NOT NULL,
 
     -- Game state
@@ -39,7 +48,7 @@ CREATE TABLE connect4_backend.games (
     phase VARCHAR(20) NOT NULL CHECK (phase IN ('NOT_STARTED', 'IN_PROGRESS', 'FINISHED')),
 
     -- Winner (nullable - null means draw or game in progress)
-    winner_id VARCHAR(255),
+    winner_id UUID REFERENCES connect4_backend.players(player_id) ON DELETE RESTRICT,
     winner_name VARCHAR(255),
 
     -- Timestamps
@@ -60,12 +69,12 @@ CREATE TABLE connect4_backend.games (
 
 -- Moves table - stores move history for each game
 CREATE TABLE connect4_backend.moves (
-                                        id BIGSERIAL PRIMARY KEY,
-                                        game_id UUID NOT NULL REFERENCES connect4_backend.games(id) ON DELETE CASCADE,
+                                        move_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                        game_id UUID NOT NULL REFERENCES connect4_backend.games(game_id) ON DELETE CASCADE,
 
     -- Move details
                                         move_index INTEGER NOT NULL,
-                                        column INTEGER NOT NULL,
+                                        col INTEGER NOT NULL,  -- Renamed from 'column' (reserved keyword)
 
     -- Landing position
                                         landed_row INTEGER NOT NULL,
@@ -74,8 +83,8 @@ CREATE TABLE connect4_backend.moves (
     -- Token placed
                                         token VARCHAR(1) NOT NULL CHECK (token IN ('X', 'O')),
 
-    -- Player who made the move
-                                        player_id VARCHAR(255) NOT NULL,
+    -- Player who made the move (foreign key to players table)
+                                        player_id UUID NOT NULL REFERENCES connect4_backend.players(player_id) ON DELETE RESTRICT,
 
     -- Timing
                                         timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -83,14 +92,39 @@ CREATE TABLE connect4_backend.moves (
 
     -- Constraints
                                         CONSTRAINT unique_move_index_per_game UNIQUE (game_id, move_index),
-                                        CHECK (column >= 0),
-    CHECK (landed_row >= 0),
-    CHECK (landed_col >= 0),
-    CHECK (move_index >= 0),
-    CHECK (thinking_time_ms >= 0)
+                                        CHECK (col >= 0),
+                                        CHECK (landed_row >= 0),
+                                        CHECK (landed_col >= 0),
+                                        CHECK (move_index >= 0),
+                                        CHECK (thinking_time_ms >= 0)
+);
+
+-- Achievement Unlocked table - stores which achievements were unlocked per player
+-- Prevents the same player from unlocking the same achievement twice
+CREATE TABLE connect4_backend.achievement_unlocked (
+                                                       achievement_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- Player who unlocked the achievement
+                                                       player_id UUID NOT NULL REFERENCES connect4_backend.players(player_id) ON DELETE CASCADE,
+
+    -- Achievement type (e.g., 'FIRST_MOVE', 'DIAGONAL_WINNER', etc.)
+                                                       achievement_type VARCHAR(64) NOT NULL,
+
+    -- When the achievement was unlocked
+                                                       unlocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Optional: which game caused the unlock
+                                                       game_id UUID REFERENCES connect4_backend.games(game_id) ON DELETE SET NULL,
+
+    -- Guarantee: achievement is unlocked only once per player
+                                                       CONSTRAINT uq_player_achievement UNIQUE (player_id, achievement_type)
 );
 
 -- Indexes for query performance
+
+-- Players indexes
+CREATE INDEX idx_players_created_at ON connect4_backend.players(created_at DESC);
+CREATE INDEX idx_players_name ON connect4_backend.players(name);
 
 -- Index for finding games by players
 CREATE INDEX idx_games_player_one ON connect4_backend.games(player_one_id);
@@ -108,6 +142,13 @@ CREATE INDEX idx_games_updated_at ON connect4_backend.games(updated_at DESC);
 CREATE INDEX idx_moves_game_id ON connect4_backend.moves(game_id);
 CREATE INDEX idx_moves_game_move_index ON connect4_backend.moves(game_id, move_index);
 CREATE INDEX idx_moves_timestamp ON connect4_backend.moves(timestamp);
+CREATE INDEX idx_moves_player_id ON connect4_backend.moves(player_id);
+
+-- Achievement unlocked indexes
+CREATE INDEX idx_achievement_unlocked_player ON connect4_backend.achievement_unlocked(player_id);
+CREATE INDEX idx_achievement_unlocked_type ON connect4_backend.achievement_unlocked(achievement_type);
+CREATE INDEX idx_achievement_unlocked_game ON connect4_backend.achievement_unlocked(game_id);
+CREATE INDEX idx_achievement_unlocked_at ON connect4_backend.achievement_unlocked(unlocked_at DESC);
 
 -- Views for common queries
 
@@ -115,26 +156,25 @@ CREATE INDEX idx_moves_timestamp ON connect4_backend.moves(timestamp);
 CREATE VIEW connect4_backend.active_games AS
 SELECT
     g.*,
-    COUNT(m.id) as move_count,
+    COUNT(m.move_id) as move_count,
     MAX(m.timestamp) as last_move_at
 FROM connect4_backend.games g
-         LEFT JOIN connect4_backend.moves m ON g.id = m.game_id
+         LEFT JOIN connect4_backend.moves m ON g.game_id = m.game_id
 WHERE g.phase IN ('NOT_STARTED', 'IN_PROGRESS')
-GROUP BY g.id;
+GROUP BY g.game_id;
 
 -- Finished games view with statistics
 CREATE VIEW connect4_backend.finished_games AS
 SELECT
     g.*,
-    COUNT(m.id) as total_moves,
+    COUNT(m.move_id) as total_moves,
     EXTRACT(EPOCH FROM (g.finished_at - g.started_at)) as duration_seconds,
     MIN(m.timestamp) as first_move_at,
     MAX(m.timestamp) as last_move_at
 FROM connect4_backend.games g
-         LEFT JOIN connect4_backend.moves m ON g.id = m.game_id
+         LEFT JOIN connect4_backend.moves m ON g.game_id = m.game_id
 WHERE g.phase = 'FINISHED'
-GROUP BY g.id;
-
+GROUP BY g.game_id;
 
 -- Reset search path
 RESET search_path;
