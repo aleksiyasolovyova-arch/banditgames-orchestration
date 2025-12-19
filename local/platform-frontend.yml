@@ -3,3 +3,8 @@ services:
     image: ${PLATFORM_FRONTEND_IMAGE}
     build:
       context: ${PLATFORM_FRONTEND_PATH}
+      args:
+        VITE_BACKEND_URL: localhost:8080
+        VITE_KEYCLOAK_URL: localhost:8180
+        VITE_KEYCLOAK_REALM: bandit-games
+        VITE_KEYCLOAK_CLIENT_ID: frontend-client
