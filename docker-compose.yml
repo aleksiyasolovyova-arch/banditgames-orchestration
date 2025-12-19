@@ -95,6 +95,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      idp_keycloak:
+        condition: service_started
     networks:
       - platform
       - kc
@@ -112,6 +114,8 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: /
+      KEYCLOAK_HOST: idp_keycloak
+      KEYCLOAK_PORT: 8080
 
   platform_frontend:
     image: ${PLATFORM_FRONTEND_IMAGE}
@@ -121,6 +125,7 @@ services:
       - "${PLATFORM_FRONTEND_PORT}:80"
     networks:
       - platform
+      - kc
 
   connect4_backend:
     image: ${CONNECT4_BACKEND_IMAGE}
