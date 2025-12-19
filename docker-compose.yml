@@ -180,6 +180,8 @@ services:
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      #Injected AI player constant UUID
+      AI_PLAYER_ID: ${AI_PLAYER_ID}
       # Backend API
       CONNECT4_BACKEND_URL: http://connect4_backend:8000
       # PostgreSQL (for dataset export)
