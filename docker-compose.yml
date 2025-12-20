@@ -114,8 +114,6 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: /
-      KEYCLOAK_HOST: idp_keycloak
-      KEYCLOAK_PORT: 8080
 
   platform_frontend:
     image: ${PLATFORM_FRONTEND_IMAGE}
