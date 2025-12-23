@@ -80,7 +80,6 @@ services:
       KC_DB_URL_DATABASE: ${MYSQL_DATABASE}
       KC_DB_USERNAME: ${MYSQL_USER}
       KC_DB_PASSWORD: ${MYSQL_PASSWORD}
-    command: start-dev
     ports:
       - "${KEYCLOAK_PORT}:8080"
     depends_on:
