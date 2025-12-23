@@ -1,0 +1,63 @@
+{
+  "realm" : "bandit-games",
+  "users" : [ {
+    "id" : "f3a46acc-abf0-4e37-8ba8-9d401cfe6a63",
+    "username" : "platform-admin_11",
+    "firstName" : "admin",
+    "lastName" : "11",
+    "email" : "admin@gmail.com",
+    "emailVerified" : false,
+    "enabled" : true,
+    "createdTimestamp" : 1766152341978,
+    "totp" : false,
+    "credentials" : [ {
+      "id" : "45a37ce3-89c7-4ae6-93d2-9aa63cd20016",
+      "type" : "password",
+      "userLabel" : "My password",
+      "createdDate" : 1766152399420,
+      "secretData" : "{\"value\":\"YdSoWS7HZBfywV2ToyexCuOAjNCi+rML75ondYdTCjU=\",\"salt\":\"yNnjpDB9qOkI0GXMG8Cz4Q==\",\"additionalParameters\":{}}",
+      "credentialData" : "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-bandit-games", "ADMIN" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "4dafdcb5-7e08-4c29-b4d3-8e8bf1887895",
+    "username" : "service-account-backend-client",
+    "emailVerified" : false,
+    "enabled" : true,
+    "createdTimestamp" : 1766145582778,
+    "totp" : false,
+    "serviceAccountClientId" : "backend-client",
+    "credentials" : [ ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-bandit-games" ],
+    "clientRoles" : {
+      "backend-client" : [ "uma_protection" ]
+    },
+    "notBefore" : 0,
+    "groups" : [ ]
+  }, {
+    "id" : "e69dfdc8-5db8-4ec0-afb3-67a7632558f3",
+    "username" : "user",
+    "emailVerified" : false,
+    "enabled" : true,
+    "createdTimestamp" : 1766193739477,
+    "totp" : false,
+    "credentials" : [ {
+      "id" : "b82a4516-8c6e-42ae-b761-a09a4661d174",
+      "type" : "password",
+      "createdDate" : 1766193739506,
+      "secretData" : "{\"value\":\"JjHmQ5pMUXEt6beJlZNjUtptZkos+tD3RJLWR/MCCAM=\",\"salt\":\"usNFhotBKuuCADPB+cPoYQ==\",\"additionalParameters\":{}}",
+      "credentialData" : "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+    } ],
+    "disableableCredentialTypes" : [ ],
+    "requiredActions" : [ ],
+    "realmRoles" : [ "default-roles-bandit-games" ],
+    "notBefore" : 0,
+    "groups" : [ ]
+  } ]
+}
