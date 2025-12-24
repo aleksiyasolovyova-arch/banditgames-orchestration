@@ -1,0 +1,5 @@
+services:
+  connect4_backend:
+    image: ${LOGGER_IMAGE}
+    build:
+      context: ${LOGGER_PATH}

@@ -161,6 +161,30 @@ services:
       retries: 3
       start_period: 10s
 
+  connect4_logger:
+    image: ${LOGGER_IMAGE}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: move.logged
+      FLUSH_SIZE: 1000
+      PARQUET_DIR: /data/parquet
+    volumes:
+      - ./move-writer-data:/data/parquet
+    ports:
+      - "${LOGGER_PORT}:8000"
+    networks:
+      - platform
+      - connect4
+      - ai-connect4-player
+    restart: on-failure
+
+
   connect4_frontend:
     image: ${CONNECT4_FRONTEND_IMAGE}
     depends_on:
@@ -202,6 +226,7 @@ services:
       - connect4
     restart: on-failure
 
+
 networks:
   platform:
     name: platform
@@ -218,3 +243,4 @@ networks:
   ai-connect4-player:
     name: ai-connect4-player
     driver: bridge
+
