@@ -295,6 +295,25 @@ services:
       retries: 3
       start_period: 10s
 
+  dvc_service:
+    image: python:3.11-slim
+    container_name: dvc_service
+    working_dir: /repo
+    volumes:
+      - ${ORCHESTRATION_PATH}:/repo
+    networks:
+      - platform
+    command: >
+      bash -c "
+        pip install -q dvc dvc-s3 && 
+        echo 'DVC service ready. Use: docker-compose exec dvc_service dvc pull' && 
+        tail -f /dev/null
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ==========================================
   # 3. ML SERVICES
   # ==========================================
