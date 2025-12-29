@@ -183,3 +183,4 @@ RESET search_path;
 CREATE SCHEMA IF NOT EXISTS player_schema;
 CREATE SCHEMA IF NOT EXISTS content_schema;
 CREATE SCHEMA IF NOT EXISTS read_model_schema;
+CREATE SCHEMA IF NOT EXISTS mlflow;
