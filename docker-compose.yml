@@ -1,6 +1,9 @@
 name: bandit-games
 
 services:
+  # ==========================================
+  # 1. INFRASTRUCTURE
+  # ==========================================
   platform_postgres:
     image: postgres:17.0-alpine
     restart: always
@@ -88,6 +91,53 @@ services:
     networks:
       - kc
 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  minio_setup:
+    image: minio/mc:latest
+    container_name: minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    networks:
+      - platform
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb myminio/datasets --ignore-existing;
+      mc policy set download myminio/datasets;
+      echo 'MinIO bucket created: datasets';
+      exit 0;
+      "
+    restart: "no"
+
+  # ==========================================
+  # 2. APPLICATION SERVICES
+  # ==========================================
   platform_backend:
     image: ${PLATFORM_BACKEND_IMAGE}
     ports:
@@ -132,12 +182,10 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       PYTHONPATH: /app
-      # RabbitMQ
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      # PostgreSQL
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
@@ -161,30 +209,6 @@ services:
       retries: 3
       start_period: 10s
 
-  connect4_logger:
-    image: ${LOGGER_IMAGE}
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      RABBITMQ_QUEUE: move.logged
-      FLUSH_SIZE: 1000
-      PARQUET_DIR: /data/parquet
-    volumes:
-      - ./move-writer-data:/data/parquet
-    ports:
-      - "${LOGGER_PORT}:8000"
-    networks:
-      - platform
-      - connect4
-      - ai-connect4-player
-    restart: on-failure
-
-
   connect4_frontend:
     image: ${CONNECT4_FRONTEND_IMAGE}
     depends_on:
@@ -199,21 +223,19 @@ services:
     image: ${AI_CONNECT4_PLAYER_IMAGE}
     environment:
       PYTHONUNBUFFERED: 1
-      # RabbitMQ
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      #Injected AI player constant UUID
       AI_PLAYER_ID: ${AI_PLAYER_ID}
-      # Backend API
       CONNECT4_BACKEND_URL: http://connect4_backend:8000
-      # PostgreSQL (for dataset export)
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${AI_PLAYER_PORT}:8002"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -222,24 +244,185 @@ services:
       platform_postgres:
         condition: service_healthy
     networks:
-      - ai-connect4-player
       - connect4
+      - ai-connect4-player
     restart: on-failure
 
+  connect4_logger:
+    image: ${LOGGER_IMAGE}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: move.logged
+      RABBITMQ_GAME_QUEUE: game.finished
+      PARQUET_DIR: /data/parquet
+      DATASET_DIR: /workspace/datasets
+      FLUSH_SIZE: 1000
+      MIN_GAMES_FOR_EXPORT: 100
+      DATASET_VERSION: v1
+      USE_DVC: true
+      DVC_REMOTE: minio
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: datasets
+      UPLOAD_TO_ORCHESTRATION: false
+    volumes:
+      - ./move-writer-data:/data/parquet
+       # Match the Trainer's bind mount path
+      - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
+      # DVC Requirements
+      - ./.git:/workspace/.git:ro
+      - ./dvc-cache:/workspace/.dvc/cache
+    ports:
+      - "${LOGGER_PORT}:8000"
+    networks:
+      - platform
+      - connect4
+      - ai-connect4-player
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================
+  # 3. ML SERVICES
+  # ==========================================
+
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: mlflow
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow:5000,localhost:*,127.0.0.1:*
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --allowed-hosts "mlflow:5000,localhost:*,127.0.0.1:*"
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - connect4
+      - platform
+
+  tensorboard:
+    image: tensorflow/tensorflow:2.14.0
+    container_name: tensorboard
+    restart: always
+    command: tensorboard --logdir /logs --host 0.0.0.0 --port 6006
+    ports:
+      - "${TENSORBOARD_PORT}:6006"
+    volumes:
+      - tensorboard_logs:/logs
+    networks:
+      - connect4
+
+  connect4_ml_trainer:
+    image: ${ML_TRAINER_IMAGE}
+    build:
+      context: ${ML_TRAINER_PATH}
+      dockerfile: Dockerfile
+    container_name: connect4_ml_trainer
+    restart: always
+    environment:
+      DATA_DIR: /workspace/datasets
+      MODELS_DIR: /workspace/models
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MIN_ACCURACY_THRESHOLD: "0.25"
+      RETRAIN_ON_NEW_DATA: "true"
+      CHECK_INTERVAL: "60"
+    volumes:
+      - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
+      - ml_models:/workspace/models
+      - tensorboard_logs:/workspace/tensorboard-logs
+    depends_on:
+      - mlflow
+      - connect4_logger
+    networks:
+      - connect4
+
+  connect4_ml_api:
+    image: ${ML_API_IMAGE}
+    build:
+      context: ${ML_API_PATH}
+      dockerfile: Dockerfile
+    container_name: connect4_ml_api
+    restart: always
+    environment:
+      MODEL_DIR: /app/models
+      LOG_LEVEL: INFO
+    ports:
+      - "${ML_API_PORT}:8001"
+    volumes:
+      - ml_models:/app/models
+    depends_on:
+      - mlflow
+      - connect4_ml_trainer
+    networks:
+      - connect4
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8001/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  connect4_ml_monitor:
+    image: ${ML_MONITOR_IMAGE}
+    build:
+      context: ${ML_MONITOR_PATH}
+      dockerfile: Dockerfile
+    container_name: connect4_ml_monitor
+    restart: always
+    environment:
+      CHECK_INTERVAL: ${CHECK_INTERVAL}
+      DATA_DIR: /workspace/datasets
+      LOG_DIR: /workspace/tensorboard_logs
+    volumes:
+      - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
+      - tensorboard_logs:/workspace/tensorboard_logs
+    depends_on:
+      - connect4_logger
+    networks:
+      - connect4
+
+# ==========================================
+# NETWORKS & VOLUMES
+# ==========================================
+volumes:
+  rabbitmq_data:
+  minio_data:
+  mysql_data:
+  ml_models:
+  mlflow_data:
+  tensorboard_logs:
 
 networks:
   platform:
     name: platform
     driver: bridge
-
   connect4:
     name: connect4
     driver: bridge
-
   kc:
     name: kc
     driver: bridge
-
   ai-connect4-player:
     name: ai-connect4-player
     driver: bridge

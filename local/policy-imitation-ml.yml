@@ -1,0 +1,5 @@
+services:
+  connect4_ml_trainer:
+    image: ${ML_TRAINER_IMAGE}
+    build:
+      context: ${ML_TRAINER_PATH}
