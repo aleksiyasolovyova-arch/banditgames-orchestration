@@ -1,0 +1,5 @@
+services:
+  connect4_ml_monitor:
+    image: ${ML_MONITOR_IMAGE}
+    build:
+      context: ${ML_MONITOR_PATH}

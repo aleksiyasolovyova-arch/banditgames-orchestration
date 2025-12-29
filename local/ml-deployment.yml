@@ -1,0 +1,6 @@
+services:
+  connect4_ml_api:
+    image: ${ML_API_IMAGE}
+    build:
+      context: ${ML_API_PATH}
+
