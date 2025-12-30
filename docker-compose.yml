@@ -382,6 +382,30 @@ services:
     networks:
       - connect4
 
+  connect4_winprob_trainer:
+    image: ${ML_WINPROB_TRAINER_IMAGE}
+    build:
+      context: ${ML_WINPROB_TRAINER_PATH}
+      dockerfile: Dockerfile
+    container_name: connect4_winprob_trainer
+    restart: always
+    environment:
+      DATASET_PATH: /workspace/datasets/dataset_v1.parquet
+      MODELS_DIR: /workspace/models
+      SELF_PLAY: "true"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      TENSORBOARD_LOG_DIR: /workspace/tensorboard-logs
+    volumes:
+      - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
+      - ml_models:/workspace/models
+      - tensorboard_logs:/workspace/tensorboard-logs
+    depends_on:
+      - mlflow
+      - connect4_logger
+    networks:
+      - connect4
+
+
   connect4_ml_api:
     image: ${ML_API_IMAGE}
     build:

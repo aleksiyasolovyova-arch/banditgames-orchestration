@@ -1,0 +1,5 @@
+services:
+  connect4_winprob_trainer:
+    image: ${ML_WINPROB_TRAINER_IMAGE}
+    build:
+      context: ${ML_WINPROB_TRAINER_PATH}
