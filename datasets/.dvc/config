@@ -1,4 +1,5 @@
 [core]
+    no_scm = True
     remote = minio
 ['remote "minio"']
     url = s3://datasets

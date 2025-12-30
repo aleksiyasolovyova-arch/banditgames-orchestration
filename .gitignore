@@ -1,4 +1,4 @@
-# IDE 
+# IDE
 .idea/
 
 # Database and data directories
@@ -19,12 +19,11 @@ minio-data/
 mlflow-data/
 mlruns/
 
-# DVC cache (optional - can be shared or local)
+# DVC Internal & Secrets
 .dvc/cache/
 .dvc/tmp/
+.dvc/config.local
 
 # Datasets - Ignore actual data files, keep DVC metadata
 datasets/*.parquet
 datasets/*.csv
-# DON'T ignore: datasets/*.dvc (DVC metadata)
-# DON'T ignore: datasets/.gitignore (DVC auto-generated)

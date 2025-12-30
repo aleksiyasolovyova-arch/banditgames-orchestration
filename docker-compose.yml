@@ -250,37 +250,44 @@ services:
 
   connect4_logger:
     image: ${LOGGER_IMAGE}
+    build:
+      context: ${LOGGER_PATH}
+      dockerfile: Dockerfile
+    container_name: connect4_logger
     depends_on:
       rabbitmq:
         condition: service_healthy
       minio:
         condition: service_healthy
     environment:
+      # --- RabbitMQ Config ---
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_QUEUE: move.logged
       RABBITMQ_GAME_QUEUE: game.finished
+
+      # --- Storage Config ---
       PARQUET_DIR: /data/parquet
-      DATASET_DIR: /workspace/datasets
+      DATASET_DIR: /data/datasets
       FLUSH_SIZE: 1000
       MIN_GAMES_FOR_EXPORT: 100
       DATASET_VERSION: v1
-      USE_DVC: true
+
+      # --- DVC & MinIO Config ---
+      USE_DVC: "true"
       DVC_REMOTE: minio
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: datasets
-      UPLOAD_TO_ORCHESTRATION: false
+      UPLOAD_TO_ORCHESTRATION: "false"
+
     volumes:
       - ./move-writer-data:/data/parquet
-       # Match the Trainer's bind mount path
-      - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
-      # DVC Requirements
-      - ./.git:/workspace/.git:ro
-      - ./dvc-cache:/workspace/.dvc/cache
+      - ./datasets:/data/datasets
+
     ports:
       - "${LOGGER_PORT}:8000"
     networks:
@@ -294,7 +301,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
   dvc_service:
     image: python:3.11-slim
     container_name: dvc_service
@@ -368,7 +374,7 @@ services:
       CHECK_INTERVAL: "60"
     volumes:
       - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
-      - ml_models:/workspace/models
+      - ${ML_TRAINER_PATH}/models:/workspace/models
       - tensorboard_logs:/workspace/tensorboard-logs
     depends_on:
       - mlflow
@@ -389,7 +395,7 @@ services:
     ports:
       - "${ML_API_PORT}:8001"
     volumes:
-      - ml_models:/app/models
+      - ${ML_TRAINER_PATH}/models:/app/models
     depends_on:
       - mlflow
       - connect4_ml_trainer
