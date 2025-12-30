@@ -398,7 +398,7 @@ services:
       TENSORBOARD_LOG_DIR: /workspace/tensorboard-logs
     volumes:
       - ${ORCHESTRATION_PATH}/datasets:/workspace/datasets
-      - ml_models:/workspace/models
+      - ${ML_TRAINER_PATH}/models:/workspace/models
       - tensorboard_logs:/workspace/tensorboard-logs
     depends_on:
       - mlflow
