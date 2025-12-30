@@ -166,6 +166,7 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: /
+      AI_PLAYER_ID: ${AI_PLAYER_ID}
 
   platform_frontend:
     image: ${PLATFORM_FRONTEND_IMAGE}
